@@ -12,8 +12,6 @@ import PostThread from './PostThread';
 import Post from './Post';
 import { Loader2 } from 'lucide-react';
 
-// UnifiedPost as a Discriminated Union for better type safety.
-// This creates a base type and then extends it for each platform.
 interface UnifiedPostBase {
   uri: string;
   text: string;
@@ -70,7 +68,7 @@ const normalizePost = (post: PlatformPost, platform: 'bluesky' | 'mastodon'): Un
             repostAuthor: AppBskyFeedDefs.isReasonRepost(item.reason) ? item.reason.by : undefined,
             embeds: p.embed, raw: item,
         };
-    } else { // Mastodon
+    } else {
         const item = post as mastodon.v1.Status;
         const target = item.reblog ?? item;
         return {
@@ -185,14 +183,29 @@ export default function PostManager({ initialData, initialHideMedia, initialHide
 
   const finalFeed = useMemo((): FeedItem[] => {
       const filteredPosts = posts.filter(post => {
-          if (filters.hideReplies && post.replyParentUri) return false;
           if (filters.hideReposts && post.isRepost) return false;
           if (filters.searchTerm && !post.text.toLowerCase().includes(filters.searchTerm.toLowerCase())) return false;
+          
+          // --- FIXED: "Hide Replies" Logic ---
+          if (filters.hideReplies) {
+              const isFormalReply = !!post.replyParentUri;
+              // Also check if it's a mention-as-reply on Mastodon
+              const isMentionReply = post.platform === 'mastodon' && post.text.trim().startsWith('@');
+              if (isFormalReply || isMentionReply) {
+                  return false;
+              }
+          }
+
+          // --- FIXED: "Has Media" Logic ---
           if (filters.hasMedia) {
               const hasBskyImages = post.platform === 'bluesky' && AppBskyEmbedImages.isView(post.embeds);
-              const hasMastoImages = post.platform === 'mastodon' && Array.isArray(post.embeds) && post.embeds.some((att) => att.type === 'image');
+              const hasMastoImages = post.platform === 'mastodon' && (
+                  (Array.isArray(post.embeds) && post.embeds.some((att) => att.type === 'image')) || // Direct upload
+                  !!(post.raw as mastodon.v1.Status).card?.image // Image in a link preview card
+              );
               if (!hasBskyImages && !hasMastoImages) return false;
           }
+
           if (filters.minLikes > 0 && (post.likeCount ?? 0) < filters.minLikes) return false;
           return true;
       });
@@ -231,7 +244,7 @@ export default function PostManager({ initialData, initialHideMedia, initialHide
         }
     });
 
-      const postsForThreading = feedItems.flatMap(item => ('posts' in item) ? [] : [item]);
+      const postsForThreading = feedItems.flatMap(item => 'posts' in item ? [] : [item]);
       const postsByUri = new Map(postsForThreading.map(p => [p.uri, p]));
       const threadRoots = postsForThreading.filter(p => !p.replyParentUri || !postsByUri.has(p.replyParentUri));
       return feedItems.filter(item => 'posts' in item || threadRoots.some(root => 'uri' in item && root.uri === item.uri));
@@ -259,7 +272,6 @@ export default function PostManager({ initialData, initialHideMedia, initialHide
           </div>
           <div className="space-y-6">
             {finalFeed.map(item => {
-              // FIXED: Use `in` operator as a type guard
               if ('posts' in item) {
                   return (
                       <div key={item.id} className="p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">
