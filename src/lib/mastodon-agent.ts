@@ -14,8 +14,7 @@ export class MastodonAgent {
         this.instanceUrl = `https://${handleParts[2]}`;
     }
 
-    // Using `unknown` is more type-safe than `any`
-    private async fetchPublic(endpoint: string): Promise<unknown> {
+    private async fetchPublic(endpoint: string): Promise<any> {
         const response = await fetch(`${this.instanceUrl}${endpoint}`);
         if (!response.ok) {
             if (response.status === 404) {
@@ -27,9 +26,9 @@ export class MastodonAgent {
     }
 
     async getAccountByHandle(handle: string): Promise<mastodon.v1.Account> {
-        const username = handle.split('@')[1];
-        // The calling function now safely asserts the type after fetching.
-        return await this.fetchPublic(`/api/v1/accounts/lookup?acct=${username}`) as mastodon.v1.Account;
+        // removes the leading '@'
+        const fullAcct = handle.startsWith('@') ? handle.substring(1) : handle;
+        return this.fetchPublic(`/api/v1/accounts/lookup?acct=${fullAcct}`);
     }
 
     async getAccountStatuses(
@@ -38,12 +37,14 @@ export class MastodonAgent {
         excludeReplies?: boolean, 
         excludeReposts?: boolean
     ): Promise<MastodonPost[]> {
-        const params = new URLSearchParams({ limit: '40' });
+        const params = new URLSearchParams({
+            limit: '40',
+        });
         if (cursor) params.set('max_id', cursor);
         if (excludeReplies) params.set('exclude_replies', 'true');
         if (excludeReposts) params.set('exclude_reblogs', 'true');
         
         const endpoint = `/api/v1/accounts/${accountId}/statuses?${params.toString()}`;
-        return await this.fetchPublic(endpoint) as MastodonPost[];
+        return this.fetchPublic(endpoint);
     }
 }
