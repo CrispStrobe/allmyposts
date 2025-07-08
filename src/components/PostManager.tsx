@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { type mastodon } from 'masto';
-import { BskyAgent, AppBskyActorDefs, AppBskyFeedDefs, AppBskyEmbedImages, AppBskyEmbedRecord, AppBskyEmbedExternal } from '@atproto/api';
+import { AppBskyActorDefs, AppBskyFeedDefs, AppBskyEmbedImages } from '@atproto/api';
 import jaroWinkler from 'jaro-winkler';
 import AdvancedFilters, { type Filters } from './AdvancedFilters';
 import AnalyticsDashboard from './AnalyticsDashboard';

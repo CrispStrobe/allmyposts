@@ -1,7 +1,7 @@
 // src/app/posts/page.tsx
 export const dynamic = 'force-dynamic';
 
-import { type BskyAgent, type AppBskyActorDefs, type AppBskyFeedDefs } from '@atproto/api';
+import { type AppBskyActorDefs, type AppBskyFeedDefs } from '@atproto/api';
 import { getAuthenticatedAgent } from '@/lib/bsky-agent';
 import { MastodonAgent, type MastodonPost } from '@/lib/mastodon-agent';
 import Link from 'next/link';

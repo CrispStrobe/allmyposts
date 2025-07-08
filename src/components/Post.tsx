@@ -6,7 +6,7 @@ import { Heart, Repeat, MessageCircle } from 'lucide-react';
 import { UnifiedPost } from './PostManager';
 import QuotePostView from './QuotePostView';
 import MastodonCardView from './MastodonCardView';
-import { type mastodon } from 'masto';
+// import { type mastodon } from 'masto';
 import { AppBskyEmbedImages, AppBskyEmbedRecord, AppBskyEmbedExternal } from '@atproto/api';
 
 const Stat = ({ icon: Icon, count }: { icon: React.ElementType, count: number }) => (
