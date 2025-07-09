@@ -3,11 +3,12 @@
 
 import Image from 'next/image';
 import { Heart, Repeat, MessageCircle } from 'lucide-react';
-import { UnifiedPost } from './PostManager';
+import { UnifiedPost } from '@/lib/types'; // FIXED: Import from central types file
 import QuotePostView from './QuotePostView';
 import MastodonCardView from './MastodonCardView';
 // import { type mastodon } from 'masto';
 import { AppBskyEmbedImages, AppBskyEmbedRecord, AppBskyEmbedExternal } from '@atproto/api';
+// , type AppBskyEmbedDefs 
 
 const Stat = ({ icon: Icon, count }: { icon: React.ElementType, count: number }) => (
     <div className="flex items-center gap-1.5 text-gray-500">
@@ -90,7 +91,7 @@ export default function Post({ post, hideMedia = false }: { post: UnifiedPost; h
             <>
               {AppBskyEmbedImages.isView(post.embeds) && (
                 <div className="grid grid-cols-2 gap-2 pt-2">
-                  {post.embeds.images.map((image) => (
+                  {post.embeds.images.map((image: AppBskyEmbedImages.ViewImage) => (
                     <a key={image.fullsize} href={image.fullsize} target="_blank" rel="noopener noreferrer">
                       <div className="relative aspect-video"><Image src={image.thumb} alt={image.alt} fill className="rounded-md object-cover"/></div>
                     </a>

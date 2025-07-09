@@ -3,50 +3,17 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { type mastodon } from 'masto';
-import { AppBskyActorDefs, AppBskyFeedDefs, AppBskyEmbedImages } from '@atproto/api';
+import { type AppBskyFeedDefs, AppBskyEmbedImages } from '@atproto/api';
 import jaroWinkler from 'jaro-winkler';
-import AdvancedFilters, { type Filters } from './AdvancedFilters';
+import AdvancedFilters from './AdvancedFilters';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import ExportManager from './ExportManager';
 import PostThread from './PostThread';
 import Post from './Post';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Inbox } from 'lucide-react';
+import { UnifiedPost, FeedItem, Filters } from '@/lib/types';
+import { normalizePost } from '@/lib/utils';
 
-interface UnifiedPostBase {
-  uri: string;
-  text: string;
-  author: { handle: string; displayName?: string; avatar?: string; };
-  createdAt: string;
-  replyCount?: number;
-  repostCount?: number;
-  likeCount?: number;
-  replyParentUri?: string;
-  isRepost: boolean;
-  repostAuthor?: { handle: string; displayName?: string; };
-}
-
-interface BlueskyUnifiedPost extends UnifiedPostBase {
-  platform: 'bluesky';
-  embeds?: AppBskyFeedDefs.PostView['embed'];
-  raw: AppBskyFeedDefs.FeedViewPost;
-}
-
-interface MastodonUnifiedPost extends UnifiedPostBase {
-  platform: 'mastodon';
-  embeds?: mastodon.v1.MediaAttachment[];
-  raw: mastodon.v1.Status;
-}
-
-export type UnifiedPost = BlueskyUnifiedPost | MastodonUnifiedPost;
-
-export interface CrosspostGroup {
-    type: 'crosspost';
-    id: string;
-    posts: UnifiedPost[];
-    similarity: number;
-}
-
-type FeedItem = UnifiedPost | CrosspostGroup;
 type PlatformPost = AppBskyFeedDefs.FeedViewPost | mastodon.v1.Status;
 
 interface FeedApiResponse {
@@ -55,36 +22,8 @@ interface FeedApiResponse {
   error?: string;
 }
 
-const normalizePost = (post: PlatformPost, platform: 'bluesky' | 'mastodon'): UnifiedPost => {
-    if (platform === 'bluesky') {
-        const item = post as AppBskyFeedDefs.FeedViewPost;
-        const p = item.post;
-        const record = p.record as { text: string; createdAt: string; reply?: { parent: { uri: string } } };
-        return {
-            uri: p.uri, text: record.text, author: p.author, createdAt: record.createdAt,
-            platform: 'bluesky', replyCount: p.replyCount, repostCount: p.repostCount,
-            likeCount: p.likeCount, replyParentUri: record.reply?.parent.uri,
-            isRepost: AppBskyFeedDefs.isReasonRepost(item.reason),
-            repostAuthor: AppBskyFeedDefs.isReasonRepost(item.reason) ? item.reason.by : undefined,
-            embeds: p.embed, raw: item,
-        };
-    } else {
-        const item = post as mastodon.v1.Status;
-        const target = item.reblog ?? item;
-        return {
-            uri: target.uri, text: target.content.replace(/<[^>]*>?/gm, ''),
-            author: { handle: `@${target.account.acct}@${new URL(target.account.url).hostname}`, displayName: target.account.displayName, avatar: target.account.avatar, },
-            createdAt: target.createdAt, platform: 'mastodon',  
-            replyCount: target.repliesCount, repostCount: target.reblogsCount, likeCount: target.favouritesCount,
-            replyParentUri: target.inReplyToId ?? undefined, isRepost: !!item.reblog,
-            repostAuthor: item.reblog ? { handle: `@${item.account.acct}@${new URL(item.account.url).hostname}`, displayName: item.account.displayName } : undefined,
-            embeds: target.mediaAttachments, raw: item,
-        };
-    }
-};
-
 interface PlatformData {
-    profile: AppBskyActorDefs.ProfileViewDetailed | { handle: string };
+    profile: { handle: string };
     feed: PlatformPost[];
     cursor?: string;
 }
@@ -99,110 +38,111 @@ interface PostManagerProps {
   initialHideMedia: boolean;
   initialHideReposts: boolean;
   initialIncludeReplies: boolean;
+  feedTypes: {
+      bluesky: 'posts' | 'likes';
+      mastodon: 'posts' | 'likes' | 'bookmarks';
+  };
 }
 
-export default function PostManager({ initialData, initialHideMedia, initialHideReposts, initialIncludeReplies }: PostManagerProps) {
+export default function PostManager({ 
+    initialData, 
+    initialHideMedia, 
+    initialHideReposts, 
+    initialIncludeReplies,
+    feedTypes
+}: PostManagerProps) {
   const [posts, setPosts] = useState<UnifiedPost[]>([]);
   const [cursors, setCursors] = useState({ bluesky: initialData.bluesky?.cursor, mastodon: initialData.mastodon?.cursor });
-  const [loadingStates, setLoadingStates] = useState({ bluesky: false, mastodon: false });
-  const [isLoadingAll, setIsLoadingAll] = useState(false);
+  const [loadingStates, setLoadingStates] = useState({ moreBsky: false, moreMasto: false, all: false });
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [hideMedia, setHideMedia] = useState(initialHideMedia);
+  const [viewMode, setViewMode] = useState<'feed' | 'analytics'>('feed');
+
+  const [filters, setFilters] = useState<Filters>({
+    searchTerm: '',
+    sortBy: 'newest',
+    hasMedia: false,
+    minLikes: 0,
+    hideReplies: !initialIncludeReplies,
+    hideReposts: initialHideReposts,
+  });
 
   useEffect(() => {
     const bskyPosts = initialData.bluesky?.feed.map(p => normalizePost(p, 'bluesky')) ?? [];
     const mastodonPosts = initialData.mastodon?.feed.map(p => normalizePost(p, 'mastodon')) ?? [];
     const combined = [...bskyPosts, ...mastodonPosts].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setPosts(combined);
+    setProgress(combined.length);
   }, [initialData]);
-
-  const [filters, setFilters] = useState<Filters>({ searchTerm: '', sortBy: 'newest', hasMedia: false, hideReplies: !initialIncludeReplies, hideReposts: initialHideReposts, minLikes: 0 });
-  const [hideMedia, setHideMedia] = useState(initialHideMedia);
-  const [viewMode, setViewMode] = useState<'feed' | 'analytics'>('feed');
 
   const handleFilterChange = (newFilters: Partial<Filters>) => setFilters(prev => ({ ...prev, ...newFilters }));
 
-  const loadMore = useCallback(async (platform: 'bluesky' | 'mastodon') => {
+  const fetchPage = useCallback(async (platform: 'bluesky' | 'mastodon', cursor?: string) => {
     const handle = initialData[platform]?.profile.handle;
+    if (!handle) throw new Error("Handle is missing");
+    
+    const payload = { handle, platform, cursor, feedType: feedTypes[platform], ...filters };
+    const response = await fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data: FeedApiResponse = await response.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }, [initialData, filters, feedTypes]);
+
+  const loadMore = useCallback(async (platform: 'bluesky' | 'mastodon') => {
     const cursor = cursors[platform];
-    if (!cursor || !handle) return;
-    setLoadingStates(prev => ({ ...prev, [platform]: true }));
-    setError('');
+    if (!cursor) return;
+
+    setLoadingStates(prev => ({ ...prev, [platform === 'bluesky' ? 'moreBsky' : 'moreMasto']: true }));
     try {
-        const payload = { handle, platform, cursor, hideReplies: filters.hideReplies, hideReposts: filters.hideReposts };
-        const response = await fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const data: FeedApiResponse = await response.json();
-        if (data.error) throw new Error(data.error);
+        const data = await fetchPage(platform, cursor);
         const newPosts = data.feed.map(p => normalizePost(p, platform));
-        setPosts(prevPosts => {
-            const existingUris = new Set(prevPosts.map(p => p.uri));
-            const uniqueNewPosts = newPosts.filter(p => !existingUris.has(p.uri));
-            return [...prevPosts, ...uniqueNewPosts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        });
+        setPosts(prev => [...prev, ...newPosts].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         setCursors(prev => ({ ...prev, [platform]: data.cursor }));
-    } catch (err) {
-        const e = err as Error;
-        setError(`Failed to load more from ${platform}: ${e.message}`);
+        setProgress(prev => prev + newPosts.length);
+    } catch (e) {
+        setError(`Failed to load more from ${platform}: ${(e as Error).message}`);
     } finally {
-        setLoadingStates(prev => ({ ...prev, [platform]: false }));
+        setLoadingStates(prev => ({ ...prev, [platform === 'bluesky' ? 'moreBsky' : 'moreMasto']: false }));
     }
-  }, [cursors, initialData, filters]);
+  }, [cursors, fetchPage]);
 
   const handleLoadAll = useCallback(async () => {
-    setIsLoadingAll(true);
-    setError('');
+    setLoadingStates(prev => ({ ...prev, all: true }));
     const loadAllForPlatform = async (platform: 'bluesky' | 'mastodon') => {
         let currentCursor = cursors[platform];
-        const handle = initialData[platform]?.profile.handle;
-        if (!handle) return;
         while (currentCursor) {
-            const payload = { handle, platform, cursor: currentCursor, hideReplies: filters.hideReplies, hideReposts: filters.hideReposts };
             try {
-                const res = await fetch('/api/feed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                const data: FeedApiResponse = await res.json();
-                if (data.error) throw new Error(data.error);
+                const data = await fetchPage(platform, currentCursor);
                 const newPosts = data.feed.map(p => normalizePost(p, platform));
-                setPosts(prev => {
-                    const existingUris = new Set(prev.map(p => p.uri));
-                    const uniqueNewPosts = newPosts.filter(p => !existingUris.has(p.uri));
-                    return [...prev, ...uniqueNewPosts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                });
+                setPosts(prev => [...prev, ...newPosts].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
                 currentCursor = data.cursor;
-                setCursors(prev => ({ ...prev, [platform]: data.cursor }));
+                setCursors(prev => ({ ...prev, [platform]: currentCursor }));
+                setProgress(prev => prev + newPosts.length);
             } catch (err) {
                 setError(`Failed during 'Load All' for ${platform}: ${(err as Error).message}`);
                 currentCursor = undefined;
             }
         }
     };
-    const loadPromises = [];
-    if (cursors.bluesky) loadPromises.push(loadAllForPlatform('bluesky'));
-    if (cursors.mastodon) loadPromises.push(loadAllForPlatform('mastodon'));
-    await Promise.all(loadPromises);
-    setIsLoadingAll(false);
-  }, [cursors, initialData, filters]);
+    await Promise.all([loadAllForPlatform('bluesky'), loadAllForPlatform('mastodon')]);
+    setLoadingStates(prev => ({ ...prev, all: false }));
+  }, [cursors, fetchPage]);
 
   const finalFeed = useMemo((): FeedItem[] => {
       const filteredPosts = posts.filter(post => {
           if (filters.hideReposts && post.isRepost) return false;
           if (filters.searchTerm && !post.text.toLowerCase().includes(filters.searchTerm.toLowerCase())) return false;
           
-          // --- FIXED: "Hide Replies" Logic ---
           if (filters.hideReplies) {
               const isFormalReply = !!post.replyParentUri;
-              // Also check if it's a mention-as-reply on Mastodon
-              const isMentionReply = post.platform === 'mastodon' && post.text.trim().startsWith('@');
-              if (isFormalReply || isMentionReply) {
-                  return false;
-              }
+              const isMention = post.platform === 'mastodon' && post.text.trim().startsWith('@');
+              if (isFormalReply || isMention) return false;
           }
 
-          // --- FIXED: "Has Media" Logic ---
           if (filters.hasMedia) {
               const hasBskyImages = post.platform === 'bluesky' && AppBskyEmbedImages.isView(post.embeds);
-              const hasMastoImages = post.platform === 'mastodon' && (
-                  (Array.isArray(post.embeds) && post.embeds.some((att) => att.type === 'image')) || // Direct upload
-                  !!(post.raw as mastodon.v1.Status).card?.image // Image in a link preview card
-              );
+              const hasMastoImages = post.platform === 'mastodon' && ((Array.isArray(post.embeds) && post.embeds.some(att => att.type === 'image')) || !!post.raw.card?.image);
               if (!hasBskyImages && !hasMastoImages) return false;
           }
 
@@ -252,6 +192,7 @@ export default function PostManager({ initialData, initialHideMedia, initialHide
   
   const feedForExport = useMemo((): UnifiedPost[] => finalFeed.flatMap(item => 'posts' in item ? item.posts : item), [finalFeed]);
   const hasMoreContent = cursors.bluesky || cursors.mastodon;
+  const isLoading = loadingStates.all || loadingStates.moreBsky || loadingStates.moreMasto;
 
   return (
     <div>
@@ -264,31 +205,48 @@ export default function PostManager({ initialData, initialHideMedia, initialHide
       </div>
 
       {viewMode === 'analytics' && <AnalyticsDashboard posts={posts} />}
+      
       {viewMode === 'feed' && (
         <>
           <AdvancedFilters filters={filters} onFiltersChange={handleFilterChange} />
           <div className="flex justify-end mb-4 -mt-4 mr-4">
             <label className="flex items-center gap-2 text-gray-700 cursor-pointer"><input type="checkbox" checked={hideMedia} onChange={(e) => setHideMedia(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" /> Hide Media</label>
           </div>
-          <div className="space-y-6">
-            {finalFeed.map(item => {
-              if ('posts' in item) {
-                  return (
-                      <div key={item.id} className="p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">
-                          <h3 className="font-semibold text-indigo-800 mb-4">Crossposted Content<span className="text-sm font-normal text-indigo-600 ml-2">(Similarity: {(item.similarity * 100).toFixed(1)}%)</span></h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{item.posts.map((post) => (<Post key={post.uri} post={post} hideMedia={hideMedia} />))}</div>
-                      </div>
-                  );
-              } else {
-                  return <PostThread key={item.uri} post={item} allPosts={posts} hideMedia={hideMedia} />;
-              }
-            })}
-          </div>
+          
+          {isLoading && posts.length === 0 && (
+             <div className="text-center py-12"><Loader2 className="w-8 h-8 text-gray-400 animate-spin mx-auto"/></div>
+          )}
+
+          {!isLoading && finalFeed.length === 0 && (
+             <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                <Inbox className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-medium text-gray-600 mb-2">{posts.length > 0 ? 'No Posts Match Your Filters' : 'No Posts Found'}</h3>
+                <p className="text-gray-500">{posts.length > 0 ? 'Try adjusting the filter settings.' : 'The initial fetch returned no content for this user.'}</p>
+            </div>
+          )}
+
+          {finalFeed.length > 0 && (
+            <div className="space-y-6">
+              {finalFeed.map(item => {
+                if ('posts' in item) {
+                    return (
+                        <div key={item.id} className="p-4 bg-indigo-50 border-l-4 border-indigo-400 rounded-r-lg">
+                            <h3 className="font-semibold text-indigo-800 mb-4">Crossposted Content<span className="text-sm font-normal text-indigo-600 ml-2">(Similarity: {(item.similarity * 100).toFixed(1)}%)</span></h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{item.posts.map((post) => (<Post key={post.uri} post={post} hideMedia={hideMedia} />))}</div>
+                        </div>
+                    );
+                } else {
+                    return <PostThread key={item.uri} post={item} allPosts={posts} hideMedia={hideMedia} />;
+                }
+              })}
+            </div>
+          )}
+          
           {hasMoreContent && (
             <div className="text-center mt-8 flex flex-wrap items-center justify-center gap-4">
-              {cursors.bluesky && <button onClick={() => loadMore('bluesky')} disabled={loadingStates.bluesky || isLoadingAll} className="px-5 py-2 font-semibold text-white bg-sky-500 rounded-md hover:bg-sky-600 disabled:bg-gray-400 flex items-center gap-2">{loadingStates.bluesky && <Loader2 className="w-4 h-4 animate-spin" />} Load More (Bluesky)</button>}
-              {cursors.mastodon && <button onClick={() => loadMore('mastodon')} disabled={loadingStates.mastodon || isLoadingAll} className="px-5 py-2 font-semibold text-white bg-purple-600 rounded-md hover:bg-purple-700 disabled:bg-gray-400 flex items-center gap-2">{loadingStates.mastodon && <Loader2 className="w-4 h-4 animate-spin" />} Load More (Mastodon)</button>}
-              <button onClick={handleLoadAll} disabled={isLoadingAll || (!cursors.bluesky && !cursors.mastodon)} className="px-5 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2">{isLoadingAll && <Loader2 className="w-4 h-4 animate-spin" />} {isLoadingAll ? 'Loading All...' : 'Load All Posts'}</button>
+              {cursors.bluesky && <button onClick={() => loadMore('bluesky')} disabled={loadingStates.moreBsky || loadingStates.all} className="px-5 py-2 font-semibold text-white bg-sky-500 rounded-md hover:bg-sky-600 disabled:bg-gray-400 flex items-center gap-2">{loadingStates.moreBsky && <Loader2 className="w-4 h-4 animate-spin" />} Load More (Bluesky)</button>}
+              {cursors.mastodon && <button onClick={() => loadMore('mastodon')} disabled={loadingStates.moreMasto || loadingStates.all} className="px-5 py-2 font-semibold text-white bg-purple-600 rounded-md hover:bg-purple-700 disabled:bg-gray-400 flex items-center gap-2">{loadingStates.moreMasto && <Loader2 className="w-4 h-4 animate-spin" />} Load More (Mastodon)</button>}
+              <button onClick={handleLoadAll} disabled={loadingStates.all || !hasMoreContent} className="px-5 py-2 font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2">{loadingStates.all && <Loader2 className="w-4 h-4 animate-spin" />} {loadingStates.all ? `Loading... (${progress})` : 'Load All Posts'}</button>
             </div>
           )}
         </>

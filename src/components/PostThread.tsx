@@ -1,7 +1,6 @@
 // src/components/PostThread.tsx
 'use client';
-
-import { UnifiedPost } from './PostManager';
+import { UnifiedPost } from '@/lib/types'; // Import from the central types file
 import Post from './Post';
 
 export interface ThreadView {

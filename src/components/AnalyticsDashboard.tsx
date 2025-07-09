@@ -1,7 +1,7 @@
 // src/components/AnalyticsDashboard.tsx
 'use client';
 import { useMemo } from 'react';
-import { UnifiedPost } from './PostManager';
+import { UnifiedPost } from '@/lib/types'; // FIXED: Import from the central types file
 import Post from './Post';
 import { BarChart3, Heart, Repeat, MessageCircle, Clock, TrendingUp, Star } from 'lucide-react';
 

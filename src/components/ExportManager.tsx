@@ -1,70 +1,118 @@
 // src/components/ExportManager.tsx
 'use client';
-
-import { useState } from 'react';
-import { UnifiedPost } from './PostManager';
-import { exportAsJson, exportAsCsv } from '@/lib/export';
+import { useState, useRef, useEffect } from 'react';
+import { UnifiedPost } from '@/lib/types'; // Import from the central types file
+import { exportAsJson, exportAsCsv, exportAsHtml, exportAsMarkdown, exportAsUrlList } from '@/lib/export';
 import { Download } from 'lucide-react';
 
+
 interface ExportManagerProps {
-  // Receives the array of posts currently visible in the feed
   posts: UnifiedPost[];
-  // Used for the filename
   handle: string;
 }
 
+type ExportFormat = 'json' | 'csv' | 'html' | 'md' | 'urls';
+
 export default function ExportManager({ posts, handle }: ExportManagerProps) {
-  const [showOptions, setShowOptions] = useState(false);
-  const [format, setFormat] = useState<'json' | 'csv'>('json');
+  const [isOpen, setIsOpen] = useState(false);
+  const [format, setFormat] = useState<ExportFormat>('json');
+  const [includeMedia, setIncludeMedia] = useState(false); // For future use in Stage 2
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const handleExport = () => {
-    // The component simply exports the data it receives as a prop.
-    // The distinction between "filtered" and "all" is handled by the user's actions
-    // in the main PostManager UI (loading more posts, etc.).
-    if (format === 'json') {
-      exportAsJson(posts, handle);
-    } else if (format === 'csv') {
-      exportAsCsv(posts, handle);
+    switch (format) {
+      case 'json':
+        exportAsJson(posts, handle);
+        break;
+      case 'csv':
+        exportAsCsv(posts, handle);
+        break;
+      case 'html':
+        exportAsHtml(posts, handle);
+        break;
+      case 'md':
+        exportAsMarkdown(posts, handle);
+        break;
+      case 'urls':
+        exportAsUrlList(posts, handle);
+        break;
     }
-    setShowOptions(false);
+    setIsOpen(false);
   };
+
+  // Close modal if clicking outside of it
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [modalRef]);
 
   return (
     <div className="relative">
       <button
-        onClick={() => setShowOptions(!showOptions)}
+        onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700"
       >
         <Download className="w-4 h-4" />
         Export View
       </button>
 
-      {showOptions && (
-        <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-20">
-            <h4 className="font-semibold text-gray-800 mb-3">Export Options</h4>
-            <div className="space-y-3">
-                <div>
-                    <label htmlFor="format-select" className="block text-sm font-medium text-gray-700 mb-1">Format</label>
-                    <select
-                        id="format-select"
-                        value={format}
-                        onChange={(e) => setFormat(e.target.value as 'json' | 'csv')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
-                    >
-                        <option value="json">JSON (Full Data)</option>
-                        <option value="csv">CSV (Spreadsheet)</option>
-                    </select>
-                </div>
-                 <p className="text-xs text-gray-500">
-                    This will export the <strong>{posts.length}</strong> currently visible posts.
-                </p>
-                <button
-                    onClick={handleExport}
-                    className="w-full px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
-                >
-                    Generate Export
-                </button>
-            </div>
+      {isOpen && (
+        <div 
+          ref={modalRef}
+          className="absolute top-full right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-xl p-4 z-20"
+        >
+          <h4 className="font-semibold text-gray-800 mb-3">Export Options</h4>
+          
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-gray-700 mb-1">Format</legend>
+            
+            {(['json', 'csv', 'html', 'md', 'urls'] as const).map((fmt) => (
+                <label key={fmt} className="flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer">
+                    <input
+                        type="radio"
+                        name="format"
+                        value={fmt}
+                        checked={format === fmt}
+                        onChange={() => setFormat(fmt)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-800">
+                        {
+                            {json: 'JSON (Raw Data)', csv: 'CSV (Spreadsheet)', html: 'HTML (Web Page)', md: 'Markdown', urls: 'URL List (.txt)'}[fmt]
+                        }
+                    </span>
+                </label>
+            ))}
+          </fieldset>
+
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <legend className="text-sm font-medium text-gray-700 mb-1">Options</legend>
+            <label className="flex items-center gap-2 p-2 rounded-md text-gray-400 cursor-not-allowed" title="Coming soon!">
+                <input
+                    type="checkbox"
+                    checked={includeMedia}
+                    onChange={(e) => setIncludeMedia(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                    disabled // Media export will be implemented in Stage 2
+                />
+                <span className="text-sm">Include media (creates .zip)</span>
+            </label>
+          </div>
+
+          <p className="text-xs text-gray-500 mt-4">
+            This will export the <strong>{posts.length}</strong> currently visible posts.
+          </p>
+          <button
+            onClick={handleExport}
+            className="w-full mt-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
+          >
+            Generate Export
+          </button>
         </div>
       )}
     </div>

@@ -3,21 +3,14 @@ export const dynamic = 'force-dynamic';
 
 import { type AppBskyActorDefs, type AppBskyFeedDefs } from '@atproto/api';
 import { getAuthenticatedAgent } from '@/lib/bsky-agent';
-import { MastodonAgent, type MastodonPost } from '@/lib/mastodon-agent';
+import { MastodonAgent, type MastodonPost, getAuthenticatedMastoClient } from '@/lib/mastodon-agent';
 import Link from 'next/link';
 import Image from 'next/image';
 import PostManager from '@/components/PostManager';
 import { ArrowLeft, WifiOff } from 'lucide-react';
+import { type MastodonProfile } from '@/lib/types';
 
-interface MastodonProfile {
-    displayName: string;
-    handle: string;
-    avatar?: string;
-    followersCount?: number;
-    followsCount?: number;
-    postsCount?: number;
-    description?: string;
-}
+// Type definitions
 
 type SuccessResult = {
     platform: 'bluesky' | 'mastodon';
@@ -32,46 +25,66 @@ type FailureResult = {
     platform: string;
 };
 
-async function getInitialDataForPlatform(platform: 'bluesky' | 'mastodon', handle: string, includeReplies: boolean): Promise<SuccessResult> {
+type FeedType = 'posts' | 'likes' | 'bookmarks';
+
+// This function now handles fetching posts, likes, and bookmarks
+async function getInitialDataForPlatform(platform: 'bluesky' | 'mastodon', handle: string, includeReplies: boolean, feedType: FeedType): Promise<SuccessResult> {
     if (platform === 'bluesky') {
         const agent = await getAuthenticatedAgent();
-        const filter = includeReplies ? 'posts_with_replies' : 'posts_no_replies';
         const profileRes = await agent.api.app.bsky.actor.getProfile({ actor: handle });
-        const feedRes = await agent.api.app.bsky.feed.getAuthorFeed({ actor: handle, limit: 50, filter });
+        let feedRes;
+        if (feedType === 'likes') {
+            feedRes = await agent.api.app.bsky.feed.getActorLikes({ actor: handle, limit: 50 });
+        } else {
+            const filter = includeReplies ? 'posts_with_replies' : 'posts_no_replies';
+            feedRes = await agent.api.app.bsky.feed.getAuthorFeed({ actor: handle, limit: 50, filter });
+        }
         return { platform, profile: profileRes.data, feed: feedRes.data.feed, cursor: feedRes.data.cursor };
-    } else {
-        const agent = new MastodonAgent(handle);
-        const account = await agent.getAccountByHandle(handle);
-        if (!account) throw new Error(`Mastodon account not found: ${handle}`);
-        const posts = await agent.getAccountStatuses(account.id, undefined, !includeReplies, false);
-        const profile: MastodonProfile = {
-            displayName: account.displayName, handle: handle, avatar: account.avatar,
-            followersCount: account.followersCount, followsCount: account.followingCount, postsCount: account.statusesCount,
-            description: account.note, 
-        };
-        const cursor = posts.length > 0 ? posts[posts.length - 1].id : undefined;
-        return { platform, profile, feed: posts, cursor };
+    } else { // Mastodon
+        if (feedType === 'likes' || feedType === 'bookmarks') {
+            const masto = await getAuthenticatedMastoClient();
+            if (!masto) { throw new Error('You must be connected to Mastodon to view this feed.'); }
+            const account = await masto.v1.accounts.verifyCredentials();
+            const posts = feedType === 'likes'
+                ? await masto.v1.favourites.list({ limit: 40 })
+                : await masto.v1.bookmarks.list({ limit: 40 });
+            const profile: MastodonProfile = { displayName: account.displayName, handle: `@${account.acct}`, avatar: account.avatar, description: account.note };
+            const cursor = posts.length > 0 ? posts[posts.length - 1].id : undefined;
+            return { platform, profile, feed: posts, cursor };
+        } else {
+            const agent = new MastodonAgent(handle);
+            const account = await agent.getAccountByHandle(handle);
+            const posts = await agent.getAccountStatuses(account.id, undefined, !includeReplies, false);
+            const profile: MastodonProfile = { 
+                displayName: account.displayName, handle, avatar: account.avatar, 
+                description: account.note, followersCount: account.followersCount, 
+                followsCount: account.followingCount, postsCount: account.statusesCount
+            };
+            const cursor = posts.length > 0 ? posts[posts.length - 1].id : undefined;
+            return { platform, profile, feed: posts, cursor };
+        }
     }
 }
 
-// FIXED: The internal Next.js type checker requires the prop to be defined as a Promise.
 interface PageProps {
     searchParams?: Promise<{ [key: string]: string | string[] | undefined; }>;
 }
 
 export default async function PostsPage({ searchParams }: PageProps) {
-  // We still await it inside the component.
   const resolvedSearchParams = await searchParams ?? {};
 
   const bskyHandle = resolvedSearchParams.bsky as string | undefined;
   const mastodonHandle = resolvedSearchParams.mastodon as string | undefined;
+  
+  const bskyFeedType = (resolvedSearchParams.bsky_feed === 'likes') ? 'likes' : 'posts';
+  const mastodonFeedType = (resolvedSearchParams.mastodon_feed as FeedType) || 'posts';
 
   if (!bskyHandle && !mastodonHandle) {
     return (
         <main className="container mx-auto p-4 md:p-8 text-center">
             <WifiOff className="w-16 h-16 mx-auto text-gray-400 mb-4"/>
             <h1 className="text-2xl font-bold text-gray-700">No Account Specified</h1>
-            <p className="text-gray-500 mt-2">Please go back and enter a Bluesky or Mastodon handle.</p>
+            <p className="text-gray-500 mt-2">Please go back and enter a handle.</p>
             <Link href="/" className="inline-flex items-center gap-2 mt-6 text-blue-500 hover:underline">
                 <ArrowLeft className="w-4 h-4" /> Back to Search
             </Link>
@@ -84,8 +97,8 @@ export default async function PostsPage({ searchParams }: PageProps) {
   const initialHideMedia = resolvedSearchParams.hideMedia === 'true';
 
   const fetchPromises: Promise<SuccessResult | FailureResult>[] = [];
-  if (bskyHandle) fetchPromises.push(getInitialDataForPlatform('bluesky', bskyHandle, includeReplies).catch(e => ({ status: 'rejected', reason: e as Error, platform: 'bluesky' })));
-  if (mastodonHandle) fetchPromises.push(getInitialDataForPlatform('mastodon', mastodonHandle, includeReplies).catch(e => ({ status: 'rejected', reason: e as Error, platform: 'mastodon' })));
+  if (bskyHandle) fetchPromises.push(getInitialDataForPlatform('bluesky', bskyHandle, includeReplies, bskyFeedType).catch(e => ({ status: 'rejected', reason: e as Error, platform: 'bluesky' })));
+  if (mastodonHandle) fetchPromises.push(getInitialDataForPlatform('mastodon', mastodonHandle, includeReplies, mastodonFeedType).catch(e => ({ status: 'rejected', reason: e as Error, platform: 'mastodon' })));
 
   const results = await Promise.all(fetchPromises);
   
@@ -95,7 +108,7 @@ export default async function PostsPage({ searchParams }: PageProps) {
   if (successfulResults.length === 0) {
     return (
         <main className="container mx-auto p-4 md:p-8 text-center">
-            <h1 className="text-2xl font-bold text-red-600">Error Fetching Accounts</h1>
+            <h1 className="text-2xl font-bold text-red-600">Error Fetching Feed</h1>
             {failedResults.length > 0 && (
                 <div className="mt-4 text-left md:w-1/2 mx-auto">
                     {failedResults.map((failure, i) => (
@@ -157,6 +170,11 @@ export default async function PostsPage({ searchParams }: PageProps) {
         initialHideMedia={initialHideMedia}
         initialHideReposts={hideReposts}
         initialIncludeReplies={includeReplies}
+        // Pass down the feed types for each platform for pagination
+        feedTypes={{
+          bluesky: bskyFeedType,
+          mastodon: mastodonFeedType
+        }}
       />
     </main>
   );
