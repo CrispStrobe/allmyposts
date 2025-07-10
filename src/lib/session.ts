@@ -9,6 +9,7 @@ export interface SessionData {
     clientId?: string;
     clientSecret?: string;
     accessToken?: string;
+    userId?: string; // Add user ID to store for caching keys
   };
 }
 
@@ -21,8 +22,6 @@ export const sessionOptions: SessionOptions = {
 };
 
 export async function getSession() {
-  // Using `as any` to bypass the type-checking error.
-  // This is a workaround for a likely dependency version conflict.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session = await getIronSession<SessionData>(await cookies() as any, sessionOptions);
   return session;

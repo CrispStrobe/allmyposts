@@ -1,28 +1,27 @@
 // src/app/page.tsx
+export const dynamic = 'force-dynamic';
+
 import SmartSearch from '@/components/SmartSearch';
 import MastodonAuth from '@/components/MastodonAuth';
-import { Github } from 'lucide-react';
+import { Github, Rss } from 'lucide-react';
 import { getSession } from '@/lib/session';
 import { getAuthenticatedMastoClient } from '@/lib/mastodon-agent';
-
-export const dynamic = 'force-dynamic';
+import Link from 'next/link';
 
 export default async function HomePage() {
   const session = await getSession();
   const isMastodonConnected = !!session.isLoggedIn && !!session.mastodon?.accessToken;
   let mastodonUserHandle: string | undefined = undefined;
 
-  // If the user is connected, fetch their handle to pre-fill the input
   if (isMastodonConnected) {
     try {
-      const masto = await getAuthenticatedMastoClient();
-      if (masto) {
+        const masto = await getAuthenticatedMastoClient();
+        if (masto) {
         const account = await masto.v1.accounts.verifyCredentials();
         mastodonUserHandle = `@${account.acct}`;
-      }
+        }
     } catch (error) {
-      console.error('Mastodon auth error:', error);
-      // Continue without Mastodon user handle
+        console.error("Could not fetch Mastodon handle for home page:", error);
     }
   }
 
@@ -33,21 +32,28 @@ export default async function HomePage() {
           <h1 className="text-4xl md:text-5xl font-bold text-gray-800">All My Posts</h1>
           <p className="mt-2 text-lg text-gray-500">View, search, and export feeds from Bluesky and Mastodon.</p>
         </div>
-        <SmartSearch
+
+        <div className="text-center mb-8">
+          <Link href="/search" className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">
+            <Rss className="w-5 h-5" />
+            <span>Try the Personalized Network Search</span>
+          </Link>
+        </div>
+
+        <SmartSearch 
           isMastodonConnected={isMastodonConnected}
           initialMastodonHandle={mastodonUserHandle}
         />
-        <MastodonAuth
+        
+        <MastodonAuth 
           isConnected={isMastodonConnected}
           userHandle={mastodonUserHandle}
         />
       </div>
       <footer className="mt-12 text-center text-gray-500">
-        
-        <div className="flex justify-center gap-4 mt-2">
-          <a href="https://github.com/CrispStrobe/allmyposts" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800">
-            <Github/>
-          </a>
+        <p>Inspired by the original `allmytweets`.</p>
+          <div className="flex justify-center gap-4 mt-2">
+            <a href="https://github.com/CrispStrobe/allmyposts" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800"><Github/></a>
         </div>
       </footer>
     </main>

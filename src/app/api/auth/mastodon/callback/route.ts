@@ -1,5 +1,6 @@
+// src/app/api/auth/mastodon/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createOAuthAPIClient } from 'masto';
+import { createOAuthAPIClient, createRestAPIClient } from 'masto';
 import { getSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     const redirectUri = `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/auth/mastodon/callback`;
     const scopes = 'read:accounts read:favourites read:bookmarks';
 
-    // FIXED: The `token` resource is directly on the oauth client, not under `v1`.
+    // This token fetch logic from your original file is correct.
     const token = await oauth.token.create({
       code,
       clientId,
@@ -33,10 +34,21 @@ export async function GET(req: NextRequest) {
       grantType: 'authorization_code',
       scope: scopes,
     });
+    
+    // --- START: ADDED LOGIC ---
+    // After getting the token, create an authenticated REST client...
+    const loggedInMasto = createRestAPIClient({
+        url: `https://${instanceUrl}`,
+        accessToken: token.accessToken,
+    });
+    // ...to fetch the user's account details and get their ID.
+    const account = await loggedInMasto.v1.accounts.verifyCredentials();
+    // --- END: ADDED LOGIC ---
 
     session.mastodon = {
       instanceUrl,
       accessToken: token.accessToken,
+      userId: account.id, // Save the user's ID to the session
     };
     session.isLoggedIn = true;
     await session.save();
