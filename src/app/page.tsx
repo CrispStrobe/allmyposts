@@ -51,7 +51,6 @@ export default async function HomePage() {
         />
       </div>
       <footer className="mt-12 text-center text-gray-500">
-        <p>Inspired by the original `allmytweets`.</p>
           <div className="flex justify-center gap-4 mt-2">
             <a href="https://github.com/CrispStrobe/allmyposts" target="_blank" rel="noopener noreferrer" className="hover:text-gray-800"><Github/></a>
         </div>

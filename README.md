@@ -1,17 +1,30 @@
 # All My Posts
 
-A web application for viewing, searching, analyzing, and exporting posts from your **Bluesky** and **Mastodon** accounts. This tool provides a unified interface to manage your social media history across both platforms.
+A viewer and search engine for your Bluesky and Mastodon worlds. This tool provides two core functionalities: a unified interface to view, analyze, and export your own social media history, and a unique search engine to discover content across the networks filtered by your social graph.
 
 ## Key Features
 
-  - **Multi-Platform Feed**: Fetch posts, replies, and saved content from Bluesky (Posts, Likes) and Mastodon (Posts, Favorites, Bookmarks).
-  - **Synoptic Crosspost View**: Automatically detects and displays similar posts from both platforms side-by-side, highlighting your cross-platform content.
+This application is divided into two main tools:
+
+### 1\. The Feed Viewer & Archive Tool
+
+This is the original functionality for managing your own content history.
+
+  - **Multi-Platform Feed**: Fetch your posts, replies, and saved content from Bluesky (Posts, Likes) and Mastodon (Posts, Favorites, Bookmarks) into a single view.
+  - **Synoptic Crosspost View**: Automatically detects and displays similar posts from both platforms side-by-side.
   - **Comprehensive Loading**: Fetch entire user feeds with "Load More" and "Load All" options to get a complete history.
-  - **Threaded Conversations**: View replies nested under their parent posts for clear, easy-to-follow context.
   - **Advanced Filtering & Sorting**: Sift through posts with full-text search, hide replies/reposts, filter by media, set a minimum like count, and sort by newest, oldest, or engagement.
-  - **Analytics Dashboard**: Get insights into your posting habits, including activity by hour and your top-performing posts based on likes.
+  - **Analytics Dashboard**: Get insights into your posting habits, including activity by hour and your top-performing posts.
   - **Data Export**: Export your current filtered view to multiple formats, including **JSON**, **CSV**, **HTML**, **Markdown**, or a plain text list of **URLs**.
-  - **Smart User Search**: Autocomplete suggests Bluesky and Mastodon handles (`@user@instance.com`) as you type.
+
+### 2\. Personalized Network Search
+
+A discovery tool designed to find relevant content from the accounts you trust.
+
+  - **Follow-Filtered Search**: Search for phrases across Bluesky and Mastodon, with results limited to posts from accounts you explicitly follow.
+  - **Personalized "Best Match" Ranking**: Builds a private "affinity index" based on your recent like/favorite history to rank search results according to your personal preferences.
+  - **Real-time Progress**: Uses Server-Sent Events (SSE) to provide live feedback during long-running operations like building your ranker.
+  - **Browser-Based Caching**: Securely caches your affinity index in your browser's `localStorage` for fast, repeated searches, ensuring your data stays on your machine.
 
 -----
 
@@ -23,7 +36,9 @@ A web application for viewing, searching, analyzing, and exporting posts from yo
   - **Platform APIs**:
       - Bluesky: [@atproto/api](https://github.com/bluesky-social/atproto/tree/main/packages/api)
       - Mastodon: [masto](https://www.google.com/search?q=https://github.com/neet/masto.js)
+  - **Real-time Updates**: Server-Sent Events (SSE)
   - **Session Management**: [iron-session](https://github.com/vvo/iron-session)
+  - **Caching**: Browser `localStorage` for client-side affinity index.
   - **Deployment**: [Vercel](https://vercel.com/)
 
 -----
@@ -55,7 +70,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 3.  **Set up your environment variables:**
     Create a new file named `.env.local` in the root of the project and add the following variables.
 
-    ```bash
+    ```ini
     # .env.local
 
     # Required for Bluesky API access. Higher rate limits.
