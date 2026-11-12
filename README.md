@@ -109,3 +109,7 @@ This application is optimized for deployment on [Vercel](https://vercel.com/).
 ## License
 
 This project is licensed under the Apache 2.0 License. See the [LICENSE](https://www.apache.org/licenses/LICENSE-2.0) file for details.
+
+## Trademarks and affiliation
+
+This project is independent and is not affiliated with, endorsed by or sponsored by Bluesky Social PBC, the Mastodon project, Meta/Threads, or X/Twitter. All platform names and trademarks are the property of their respective owners and are used only to identify compatible services.
